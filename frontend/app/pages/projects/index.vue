@@ -1,0 +1,74 @@
+<script setup lang="ts">
+const router = useRouter();
+const { projects, ensureLoaded } = useProjectsState();
+const loadError = ref(false);
+async function load() {
+  loadError.value = false;
+  try {
+    await ensureLoaded();
+  } catch {
+    loadError.value = true;
+  }
+}
+await load();
+
+const query = ref("");
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  if (!q) return projects.value;
+  return projects.value.filter(
+    (p) => p.name.toLowerCase().includes(q) || p.client.toLowerCase().includes(q),
+  );
+});
+
+</script>
+
+<template>
+  <UDashboardPanel>
+    <template #header>
+      <PageHeader :crumbs="[{ label: 'Projects' }]">
+        <template #meta><UBadge color="neutral" variant="subtle" size="sm" :label="String(projects.length)" /></template>
+        <template #actions>
+          <UInput v-model="query" icon="i-lucide-search" placeholder="Search projects or clients" aria-label="Search projects" class="w-64" />
+        </template>
+      </PageHeader>
+    </template>
+
+    <template #body>
+      <ErrorState v-if="loadError" message="Could not load projects. Is the backend running?" @retry="load" />
+      <EmptyState v-else-if="projects.length === 0" icon="i-lucide-layout-grid" title="No projects yet" description="Use the project switcher in the sidebar to create your first project." />
+      <Panel v-else flush>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[820px] text-sm">
+            <thead class="bg-muted text-left text-xs font-semibold text-muted">
+              <tr>
+                <th scope="col" class="px-4 py-2.5">Project / site</th>
+                <th scope="col" class="px-3 py-2.5">Client</th>
+                <th scope="col" class="px-3 py-2.5 text-right">Portfolios</th>
+                <th scope="col" class="px-3 py-2.5 text-right">Scenario sets</th>
+                <th scope="col" class="px-3 py-2.5 text-right">Runs</th>
+                <th scope="col" class="px-3 py-2.5">Last run</th>
+                <th scope="col" class="px-4 py-2.5 text-right">Last objective</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in filtered" :key="p.id" class="cursor-pointer border-t border-muted hover:bg-muted" @click="router.push(`/p/${p.id}/runs`)">
+                <td class="px-4 py-3">
+                  <NuxtLink :to="`/p/${p.id}/runs`" class="font-semibold text-highlighted" @click.stop>{{ p.name }}</NuxtLink>
+                  <div class="text-xs text-muted">{{ p.asset_summary }}</div>
+                </td>
+                <td class="px-3 py-3 text-default">{{ p.client }}</td>
+                <td class="px-3 py-3 text-right font-mono">{{ p.portfolio_count }}</td>
+                <td class="px-3 py-3 text-right font-mono">{{ p.scenario_set_count }}</td>
+                <td class="px-3 py-3 text-right font-mono">{{ p.run_count }}</td>
+                <td class="px-3 py-3 text-default">{{ fmtDate(p.last_run_at) }}</td>
+                <td class="px-4 py-3 text-right font-mono text-highlighted">{{ fmtMoney(p.last_objective_value) }}</td>
+              </tr>
+              <tr v-if="filtered.length === 0"><td colspan="7" class="px-4 py-10 text-center text-muted">No projects match “{{ query }}”.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </template>
+  </UDashboardPanel>
+</template>

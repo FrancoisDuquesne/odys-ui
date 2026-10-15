@@ -4,8 +4,6 @@ A web workspace for energy portfolio optimization, built on the open-source [`od
 
 ![odys demo](media/odys-promo-teaser.gif)
 
-The full promo video is in [`media/odys-promo-readme.mp4`](media/odys-promo-readme.mp4).
-
 ## Quick start
 
 ```bash

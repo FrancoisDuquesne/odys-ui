@@ -54,7 +54,7 @@ const totalDemand = computed(() => demand.value.reduce((s, r) => s + r.mwh, 0));
     <Panel title="Supply" description="Energy delivered over the horizon" flush>
       <table class="w-full text-sm">
         <thead class="text-left text-xs text-muted">
-          <tr><th class="px-4 py-2 font-medium">Source</th><th class="px-3 py-2 text-right font-medium">Energy</th><th class="px-3 py-2 text-right font-medium">Share</th><th class="px-3 py-2 text-right font-medium">Peak</th><th class="px-4 py-2 text-right font-medium">Cap. factor</th></tr>
+          <tr><th class="px-4 py-2 font-medium">Source</th><th class="px-3 py-2 text-right font-medium">Energy</th><th class="px-3 py-2 text-right font-medium">Share</th><th class="px-3 py-2 text-right font-medium">Peak</th><th class="px-4 py-2 text-right font-medium">Capacity factor</th></tr>
         </thead>
         <tbody>
           <tr v-for="r in supply" :key="r.name" class="border-t border-muted">

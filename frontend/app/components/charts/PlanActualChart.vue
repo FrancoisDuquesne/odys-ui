@@ -3,8 +3,8 @@ const props = defineProps<{ planned: number[]; actual: number[] | null; stepHour
 const { c, xAxis, yAxis, tooltip, legend } = useChartTheme();
 
 const option = computed(() => ({
-  grid: { left: 48, right: 8, top: 52, bottom: 24 },
-  legend: legend(),
+  grid: { left: 48, right: 8, top: 56, bottom: 24 },
+  legend: legend(undefined, { top: 0, left: "right" }),
   tooltip: tooltip({ valueFormatter: (v: number) => `${Number(v).toFixed(1)} MW` }),
   xAxis: xAxis(stepLabels(props.planned.length, props.stepHours)),
   yAxis: yAxis("MW"),
@@ -35,5 +35,5 @@ const option = computed(() => ({
 </script>
 
 <template>
-  <VChart :option="option" autoresize style="height: 170px" />
+  <VChart :option="option" autoresize style="height: 190px" />
 </template>

@@ -19,13 +19,13 @@ const points = computed(() =>
 const isCurrent = (i: number) => points.value[i]?.run.id === props.currentRun.id;
 
 const option = computed(() => ({
-  grid: { left: 72, right: 24, top: 24, bottom: 48 },
+  grid: { left: 76, right: 24, top: 24, bottom: 48 },
   tooltip: tooltip({
     trigger: "item",
-    formatter: (p: any) => `<b>${p.data.run.display_id}</b> · CVaR weight ${p.data.weight}<br/>E[profit] ${fmtMoneyFull(p.data.profit)}<br/>CVaR ${fmtMoneyFull(p.data.cvar)}`,
+    formatter: (p: any) => `<b>${p.data.run.display_id}</b> · risk weight ${p.data.weight}<br/>Expected profit ${fmtMoneyFull(p.data.profit)}<br/>Tail-risk (CVaR) profit ${fmtMoneyFull(p.data.cvar)}`,
   }),
-  xAxis: { ...yAxis("", { name: "CVaR(profit) $", nameLocation: "middle", nameGap: 30, axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }) },
-  yAxis: yAxis("E[profit] $", { axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }),
+  xAxis: { ...yAxis("", { name: "Tail-risk profit, CVaR ($)", nameLocation: "middle", nameGap: 32, axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }) },
+  yAxis: yAxis("Expected profit ($)", { axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }),
   series: [
     {
       type: "line",
@@ -39,7 +39,7 @@ const option = computed(() => ({
         position: "top",
         color: c.value.text,
         fontSize: 12,
-        formatter: (ctx: any) => `w=${points.value[ctx.dataIndex]?.weight}`,
+        formatter: (ctx: any) => `${points.value[ctx.dataIndex]?.weight}`,
       },
     },
   ],
@@ -47,7 +47,7 @@ const option = computed(() => ({
 </script>
 
 <template>
-  <Panel title="Risk frontier" description="Expected profit vs. CVaR(profit), one point per run across a CVaR-weight sweep. The highlighted point is this run.">
+  <Panel title="Risk frontier" description="Expected profit against tail-risk profit (CVaR), one point per run. Labels show the risk weight; the green point is this run.">
     <template #actions>
       <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-refresh-cw" :loading="sweeping" label="Run sweep" @click="$emit('sweep')" />
     </template>
@@ -56,7 +56,7 @@ const option = computed(() => ({
       v-else
       icon="i-lucide-radar"
       title="No sweep yet"
-      description="Run a sweep to solve this portfolio and scenario set across CVaR weights 0 – 4 and trace the trade-off between expected profit and tail risk."
+      description="Run a sweep to solve this portfolio and scenario set across risk weights 0 – 4 and trace the trade-off between expected profit and tail risk."
     />
     <template #footer>A sweep creates six new runs in this project's history.</template>
   </Panel>

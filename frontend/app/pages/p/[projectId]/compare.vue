@@ -119,6 +119,13 @@ const outcomeRows = computed(() => {
   return rows.map((r) => ({ ...r, delta: r.a !== null && r.b !== null ? r.b - r.a : null }));
 });
 
+const showUnchanged = ref(false);
+const isChanged = (r: { delta: number | null }) => r.delta !== null && Math.abs(r.delta) >= 1e-6;
+const allIdentical = computed(() => outcomeRows.value.length > 0 && outcomeRows.value.every((r) => !isChanged(r)));
+const sortedRows = computed(() => [...outcomeRows.value].sort((a, b) => Number(isChanged(b)) - Number(isChanged(a))));
+const visibleRows = computed(() => (showUnchanged.value ? sortedRows.value : sortedRows.value.filter(isChanged)));
+const unchangedCount = computed(() => outcomeRows.value.filter((r) => !isChanged(r)).length);
+
 function deltaClass(row: (typeof outcomeRows.value)[number]) {
   if (row.delta === null) return "text-dimmed";
   if (Math.abs(row.delta) < 1e-6) return "text-muted";
@@ -202,10 +209,34 @@ const colorsFor = (pv: PortfolioVersion | null) => assetColorMap(pv?.assets);
         <EmptyState v-if="!runB" icon="i-lucide-git-compare" title="Pick a second run" :description="solvedRuns.length < 2 ? 'Only one solved run exists — run another configuration to compare.' : `Choose a variant above to compare with ${runA.display_id}.`" />
 
         <template v-else>
-          <Panel title="Outcomes" description="Green = B is better than A, red = worse. Costs are negative contributions to profit, so a smaller spend reads as a positive change." flush>
-            <div class="overflow-x-auto">
+          <div
+            v-if="allIdentical"
+            class="flex items-start gap-3 rounded-lg border border-default bg-default p-4"
+            role="status"
+          >
+            <UIcon name="i-lucide-equal" class="mt-0.5 size-5 shrink-0 text-muted" />
+            <div>
+              <p class="text-sm font-semibold text-highlighted">These runs produced identical results</p>
+              <p class="text-xs text-muted">
+                {{ runA.display_id }} and {{ runB.display_id }} match on every outcome ({{ relation(runA, runB).label }}).
+                Re-running with a different portfolio, scenario set or risk setting will show differences here.
+              </p>
+            </div>
+            <USwitch v-model="showUnchanged" class="ml-auto shrink-0" size="sm" label="Show outcomes" />
+          </div>
+
+          <Panel
+            v-if="!allIdentical || showUnchanged"
+            title="Outcomes"
+            :description="allIdentical ? 'All outcomes match.' : 'Changed outcomes first. Green = B is better than A, red = worse. Costs are negative contributions to profit, so a smaller spend reads as a positive change.'"
+            flush
+          >
+            <template v-if="unchangedCount > 0 && !allIdentical" #actions>
+              <USwitch v-model="showUnchanged" size="sm" :label="`Show unchanged (${unchangedCount})`" />
+            </template>
+            <div v-if="visibleRows.length" class="overflow-x-auto">
               <table class="w-full min-w-[560px] text-sm">
-                <thead class="bg-muted text-xs font-semibold text-muted">
+                <thead class="bg-ink-950/[0.05] dark:bg-black/25 text-xs font-semibold text-muted">
                   <tr>
                     <th scope="col" class="px-4 py-2 text-left">Outcome</th>
                     <th scope="col" class="px-3 py-2 text-right">A · {{ runA.display_id }}</th>
@@ -214,14 +245,19 @@ const colorsFor = (pv: PortfolioVersion | null) => assetColorMap(pv?.assets);
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in outcomeRows" :key="row.label" class="border-t border-muted">
+                  <tr
+                    v-for="row in visibleRows"
+                    :key="row.label"
+                    class="border-t border-muted"
+                    :class="isChanged(row) ? 'bg-primary/5' : 'text-muted'"
+                  >
                     <th scope="row" class="px-4 py-2.5 text-left font-normal">
-                      <span class="text-highlighted">{{ row.label }}</span>
-                      <span class="ml-2 text-xs text-dimmed">{{ row.hint }}</span>
+                      <span :class="isChanged(row) ? 'font-medium text-highlighted' : 'text-default'">{{ row.label }}</span>
+                      <span class="ml-2 text-xs text-muted">{{ row.hint }}</span>
                     </th>
                     <td class="px-3 py-2.5 text-right font-mono">{{ fmtCell(row, row.a) }}</td>
                     <td class="px-3 py-2.5 text-right font-mono">{{ fmtCell(row, row.b) }}</td>
-                    <td class="px-4 py-2.5 text-right font-mono font-medium" :class="deltaClass(row)">{{ fmtCell(row, row.delta, { plus: true }) }}</td>
+                    <td class="px-4 py-2.5 text-right font-mono font-medium" :class="deltaClass(row)">{{ isChanged(row) ? fmtCell(row, row.delta, { plus: true }) : "no change" }}</td>
                   </tr>
                 </tbody>
               </table>

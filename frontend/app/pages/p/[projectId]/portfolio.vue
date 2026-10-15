@@ -8,6 +8,7 @@ const { currentProject } = useCurrentProject();
 const { listPortfolioVersions, createPortfolioVersion } = usePortfolio();
 
 const versions = ref<PortfolioVersion[]>([]);
+const viewingId = ref<number | null>(null);
 const loading = ref(true);
 const draftAssets = ref<Asset[]>([]);
 const saving = ref(false);
@@ -19,7 +20,8 @@ async function load() {
   loadError.value = null;
   try {
     versions.value = await listPortfolioVersions(projectId.value);
-    const latest = versions.value.at(-1);
+    viewingId.value = null;
+    const latest = latestVersion.value;
     draftAssets.value = latest ? JSON.parse(JSON.stringify(latest.assets)) : [];
   } catch {
     loadError.value = "Could not load the portfolio.";
@@ -27,13 +29,43 @@ async function load() {
     loading.value = false;
   }
 }
+
+// The portfolio shown is the most recently saved name; its versions form the browsable history.
+const family = computed(() => groupVersions(versions.value).at(-1) ?? null);
+const latestVersion = computed(() => family.value?.latest ?? null);
+const history = computed(() =>
+  [...(family.value?.versions ?? [])]
+    .reverse()
+    .map((v, i, arr) => ({ v, changes: arr[i + 1] ? diffAssets(arr[i + 1].assets, v.assets) : [] })),
+);
+const viewedVersion = computed(() => (viewingId.value === null ? null : (versions.value.find((v) => v.id === viewingId.value) ?? null)));
+const viewingOld = computed(() => !!viewedVersion.value && viewedVersion.value.id !== latestVersion.value?.id);
+const dirty = computed(() => !viewingOld.value && JSON.stringify(draftAssets.value) !== JSON.stringify(latestVersion.value?.assets ?? []));
+const historyOpen = ref(false);
+
 await load();
 
-const latestVersion = computed(() => versions.value.at(-1) ?? null);
-const dirty = computed(() => JSON.stringify(draftAssets.value) !== JSON.stringify(latestVersion.value?.assets ?? []));
+function viewVersion(v: PortfolioVersion) {
+  if (dirty.value && !window.confirm("You have unsaved portfolio changes. Discard them to view another version?")) return;
+  viewingId.value = v.id === latestVersion.value?.id ? null : v.id;
+  draftAssets.value = JSON.parse(JSON.stringify(v.assets));
+  historyOpen.value = false;
+}
+
+function backToLatest() {
+  viewingId.value = null;
+  discardChanges();
+}
 
 onBeforeRouteLeave(() => {
   if (dirty.value && !saving.value) return window.confirm("You have unsaved portfolio changes. Leave without saving?");
+});
+
+// Saving overwrites the latest version while nothing has run against it (it is still a draft).
+const saveLabel = computed(() => {
+  const l = latestVersion.value;
+  if (!l) return "Save";
+  return l.run_count === 0 && l.version > 1 ? "Save changes" : l.run_count === 0 ? "Save" : `Save as v${l.version + 1}`;
 });
 
 function discardChanges() {
@@ -54,7 +86,7 @@ const summary = computed(() => {
   return {
     generation: {
       value: fmtMW(power),
-      sub: `${plural(generators.length, "generator")}${ucCount ? ` · ${ucCount} with unit commitment` : ""}`,
+      sub: `${plural(generators.length, "generator")}${ucCount ? ` · ${ucCount} with on/off scheduling` : ""}`,
       segments: generators.map((g) => ({ name: g.name, value: g.nominal_power, color: colors[g.name] })),
     },
     storage: {
@@ -111,6 +143,7 @@ const slideoverIndex = ref<number | null>(null);
 const addMenuOpen = ref(false);
 
 function openAdd(kind: AssetKind) {
+  if (viewingOld.value) return;
   slideoverMode.value = "new";
   slideoverKind.value = kind;
   slideoverAsset.value = null;
@@ -120,6 +153,7 @@ function openAdd(kind: AssetKind) {
 }
 
 function openEdit(asset: Asset) {
+  if (viewingOld.value) return;
   const idx = draftAssets.value.indexOf(asset);
   slideoverMode.value = "edit";
   slideoverKind.value = asset.kind;
@@ -149,12 +183,54 @@ const addTypes: { kind: AssetKind; label: string; desc: string; icon: string }[]
   { kind: "market", label: "Energy market", desc: "Spot market to buy / sell", icon: "i-lucide-trending-up" },
 ];
 
+const duplicating = ref(false);
+const startingExample = ref(false);
+
+function apiErrorText(e: any, fallback: string) {
+  const d = e?.data?.detail;
+  return Array.isArray(d) ? d.map((x: any) => `${(x.loc ?? []).slice(-1)[0]}: ${x.msg}`).join("; ") : typeof d === "string" ? d : fallback;
+}
+
+async function duplicatePortfolio() {
+  if (!latestVersion.value) return;
+  duplicating.value = true;
+  try {
+    const name = `${latestVersion.value.name} copy`;
+    await createPortfolioVersion(projectId.value, name, JSON.parse(JSON.stringify(latestVersion.value.assets)));
+    await load();
+    toast.add({ title: `Duplicated as “${name}”`, description: "Edit the copy freely; the original and its runs are unchanged.", color: "success", icon: "i-lucide-copy" });
+  } catch (e: any) {
+    toast.add({ title: "Could not duplicate portfolio", description: apiErrorText(e, "The backend rejected the request."), color: "error" });
+  } finally {
+    duplicating.value = false;
+  }
+}
+
+async function startFromExample() {
+  startingExample.value = true;
+  try {
+    await createPortfolioVersion(projectId.value, latestVersion.value?.name ?? "Core", exampleAssets());
+    await load();
+    toast.add({ title: "Example portfolio added", description: "Wind, gas, a battery, site demand and a day-ahead market. Edit anything you like.", color: "success", icon: "i-lucide-circle-check" });
+  } catch (e: any) {
+    toast.add({ title: "Could not add the example", description: apiErrorText(e, "The backend rejected the portfolio."), color: "error" });
+  } finally {
+    startingExample.value = false;
+  }
+}
+
 async function saveNewVersion() {
   saving.value = true;
   try {
+    const restoredFrom = viewingOld.value ? viewedVersion.value : null;
     const created = await createPortfolioVersion(projectId.value, latestVersion.value?.name ?? "Core", draftAssets.value);
     await load();
-    toast.add({ title: `Saved as v${created.version}`, description: "New runs will use this version; existing runs are unchanged.", color: "success", icon: "i-lucide-circle-check" });
+    toast.add({
+      title: restoredFrom ? `Restored v${restoredFrom.version} as v${created.version}` : `Saved as v${created.version}`,
+      description: "New runs will use this version; existing runs are unchanged.",
+      color: "success",
+      icon: "i-lucide-circle-check",
+    });
   } catch (e: any) {
     const d = e?.data?.detail;
     toast.add({
@@ -173,14 +249,45 @@ async function saveNewVersion() {
     <template #header>
       <PageHeader :crumbs="[{ label: currentProject?.name ?? 'Project', to: `/p/${projectId}/runs` }, { label: `Portfolio · ${latestVersion?.name ?? 'Core'}` }]">
         <template #meta>
-          <UBadge v-if="latestVersion" color="neutral" variant="outline" size="sm" :label="`v${latestVersion.version} · saved ${fmtDate(latestVersion.created_at)}`" />
-          <UTooltip :text="summary.milp ? 'Unit-commitment generators add binary variables, so this is a mixed-integer problem (slower to solve).' : 'No binary variables, so this solves as a linear program.'">
-            <UBadge color="neutral" variant="subtle" size="sm" :label="summary.milp ? 'MILP' : 'LP'" />
+          <UPopover v-if="family" v-model:open="historyOpen" :content="{ align: 'start' }">
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="xs"
+              icon="i-lucide-history"
+              trailing-icon="i-lucide-chevron-down"
+              :label="`v${(viewedVersion ?? latestVersion)!.version} · ${fmtDate((viewedVersion ?? latestVersion)!.created_at)}`"
+              aria-label="Version history"
+            />
+            <template #content>
+              <div class="max-h-96 w-80 overflow-y-auto p-1.5">
+                <p class="px-2 pb-1 pt-1.5 text-xs font-medium text-muted">Version history · {{ family.name }}</p>
+                <button
+                  v-for="{ v, changes } in history"
+                  :key="v.id"
+                  type="button"
+                  class="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-elevated"
+                  :class="(viewedVersion ?? latestVersion)?.id === v.id ? 'bg-elevated' : ''"
+                  @click="viewVersion(v)"
+                >
+                  <span class="flex items-center gap-2 text-sm">
+                    <span class="font-medium">v{{ v.version }}</span>
+                    <UBadge v-if="v.id === latestVersion?.id" color="primary" variant="subtle" size="sm" label="Latest" />
+                    <span class="ml-auto text-xs text-muted">{{ fmtDate(v.created_at) }}</span>
+                  </span>
+                  <span class="text-xs text-muted">{{ v.run_count }} {{ v.run_count === 1 ? "run" : "runs" }}<template v-if="changes.length"> · {{ changes.slice(0, 3).join(" · ") }}<template v-if="changes.length > 3"> · +{{ changes.length - 3 }} more</template></template><template v-else-if="v.version === 1"> · first version</template><template v-else> · no changes</template></span>
+                </button>
+              </div>
+            </template>
+          </UPopover>
+          <UTooltip :text="summary.milp ? 'Some generators have on/off scheduling, so runs take longer to solve (odys: mixed-integer program, MILP).' : 'All assets are continuous, so runs solve quickly (odys: linear program, LP).'">
+            <UBadge color="neutral" variant="subtle" size="sm" :label="summary.milp ? 'Includes on/off decisions' : 'Continuous only'" />
           </UTooltip>
           <UBadge v-if="dirty" color="warning" variant="subtle" size="sm" label="Unsaved changes" />
         </template>
         <template #actions>
           <UButton v-if="dirty" color="neutral" variant="ghost" label="Discard" @click="discardChanges" />
+          <UButton v-if="viewingOld" color="neutral" variant="ghost" label="Back to latest" @click="backToLatest" />
           <UButton
             color="neutral"
             variant="outline"
@@ -188,9 +295,20 @@ async function saveNewVersion() {
             label="Run"
             :disabled="!latestVersion"
             :title="dirty ? 'Runs use the last saved version' : undefined"
-            @click="router.push(`/p/${projectId}/runs/new?portfolio=${latestVersion?.id ?? ''}`)"
+            @click="router.push(`/p/${projectId}/runs/new?portfolio=${(viewedVersion ?? latestVersion)?.id ?? ''}`)"
           />
-          <UButton :loading="saving" :disabled="!dirty" :label="`Save as v${(latestVersion?.version ?? 0) + 1}`" @click="saveNewVersion" />
+          <UButton
+            v-if="latestVersion && !dirty && !viewingOld"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-copy"
+            label="Duplicate"
+            :loading="duplicating"
+            title="Save a copy of this portfolio under a new name to try variations"
+            @click="duplicatePortfolio"
+          />
+          <UButton v-if="viewingOld" :loading="saving" icon="i-lucide-rotate-ccw" :label="`Restore v${viewedVersion?.version} as latest`" @click="saveNewVersion" />
+          <UButton v-else :loading="saving" :disabled="!dirty" :label="saveLabel" @click="saveNewVersion" />
         </template>
       </PageHeader>
     </template>
@@ -199,6 +317,14 @@ async function saveNewVersion() {
       <PageSkeleton v-if="loading" />
       <ErrorState v-else-if="loadError" :message="loadError" @retry="load" />
       <div v-else class="flex flex-col gap-5">
+        <UAlert
+          v-if="viewingOld"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-history"
+          :title="`Viewing v${viewedVersion?.version} (read-only)`"
+          :description="`Saved ${fmtDate(viewedVersion!.created_at)} · ${viewedVersion!.run_count} ${viewedVersion!.run_count === 1 ? 'run' : 'runs'} used it. Restore it to make it the latest version, or go back.`"
+        />
         <div class="grid gap-3 md:grid-cols-3">
           <KpiCard label="Dispatchable capacity" :icon="ASSET_KIND_ICON.generator" :value="summary.generation.value" :sub="summary.generation.sub">
             <div v-if="summary.generation.segments.length" class="mt-2 flex h-1.5 gap-px overflow-hidden rounded-full">
@@ -220,7 +346,7 @@ async function saveNewVersion() {
             :content="{ align: 'end' }"
             :ui="{ content: 'w-65' }"
           >
-            <UButton icon="i-lucide-plus" trailing-icon="i-lucide-chevron-down" label="Add asset" class="ml-auto" />
+            <UButton v-if="!viewingOld" icon="i-lucide-plus" trailing-icon="i-lucide-chevron-down" label="Add asset" class="ml-auto" />
           </UDropdownMenu>
         </div>
 
@@ -231,8 +357,13 @@ async function saveNewVersion() {
           v-if="filteredAssets.length === 0"
           icon="i-lucide-boxes"
           :title="draftAssets.length === 0 ? 'No assets yet' : 'No assets match this filter'"
-          :description="draftAssets.length === 0 ? 'Add generators, storage, loads and markets to build a portfolio.' : 'Try a different type or search term.'"
-        />
+          :description="draftAssets.length === 0 ? 'A portfolio is the set of plants, batteries, demand and markets you want to optimize. Start from a ready-made example or add your own.' : 'Try a different type or search term.'"
+        >
+          <div v-if="draftAssets.length === 0" class="flex flex-wrap justify-center gap-2">
+            <UButton icon="i-lucide-sparkles" label="Start from example" :loading="startingExample" @click="startFromExample" />
+            <UButton color="neutral" variant="outline" icon="i-lucide-plus" label="Add first asset" @click="openAdd('generator')" />
+          </div>
+        </EmptyState>
       </div>
     </template>
   </UDashboardPanel>

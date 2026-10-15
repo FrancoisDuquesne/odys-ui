@@ -2,6 +2,7 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-01-01",
   devtools: { enabled: true },
   modules: ["@nuxt/ui", "@nuxt/icon", "@nuxt/fonts"],
+  app: { head: { link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }] } },
   css: ["~/assets/css/main.css"],
   // Flatten components/charts/*.vue to their bare name (DispatchChart, not
   // ChartsDispatchChart) -- Nuxt's default nested-folder prefixing otherwise

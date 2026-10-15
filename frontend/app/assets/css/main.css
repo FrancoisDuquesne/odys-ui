@@ -5,6 +5,43 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
+  /* Brand palette: Muted Teal, Burnt Peach, Twilight Indigo, Apricot Cream, Eggshell. */
+  --color-sage-50: #f1f7f4;
+  --color-sage-100: #dfeee6;
+  --color-sage-200: #c0dccf;
+  --color-sage-300: #9fc8b3;
+  --color-sage-400: #81b29a;
+  --color-sage-500: #4b8269;
+  --color-sage-600: #3d6955;
+  --color-sage-700: #325545;
+  --color-sage-800: #294437;
+  --color-sage-900: #213830;
+  --color-sage-950: #112019;
+
+  --color-peach-50: #fdf3ef;
+  --color-peach-100: #fbe3da;
+  --color-peach-200: #f6c7b8;
+  --color-peach-300: #efa48c;
+  --color-peach-400: #e68b6e;
+  --color-peach-500: #e07a5f;
+  --color-peach-600: #c75f44;
+  --color-peach-700: #a54a36;
+  --color-peach-800: #873f31;
+  --color-peach-900: #6f372d;
+  --color-peach-950: #3b1913;
+
+  --color-ink-50: #f8f6ec;
+  --color-ink-100: #f4f1de;
+  --color-ink-200: #e6e2cc;
+  --color-ink-300: #cfcbb5;
+  --color-ink-400: #9a9aa8;
+  --color-ink-500: #676a82;
+  --color-ink-600: #565971;
+  --color-ink-700: #3d405b;
+  --color-ink-800: #2e3047;
+  --color-ink-900: #212338;
+  --color-ink-950: #151625;
+
   /* Type ramp, one step larger than Tailwind's default for dense data screens. */
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.15rem;
@@ -32,8 +69,15 @@ body {
   outline-offset: 2px;
 }
 
-/* Muted dashboard content area with a subtle dot grid. */
-.dot-grid {
-  background-image: radial-gradient(circle, var(--ui-border-accented) 1px, transparent 1px);
-  background-size: 20px 20px;
+/* WCAG AA text tokens: muted >= 7:1, dimmed >= 4.5:1 on white and on the muted page background. */
+:root {
+  --ui-text-muted: var(--color-ink-600);
+  --ui-text-dimmed: var(--color-ink-500);
+}
+:root:not(.dark) {
+  --ui-bg: #fdfcf6;
+}
+.dark {
+  --ui-text-muted: var(--color-ink-300);
+  --ui-text-dimmed: var(--color-ink-400);
 }

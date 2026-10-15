@@ -1,12 +1,13 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: "green",
-      neutral: "slate",
+      primary: "sage",
+      secondary: "peach",
+      neutral: "ink",
     },
     dashboardPanel: {
       slots: {
-        body: "dot-grid bg-muted",
+        body: "bg-muted",
       },
     },
   },

@@ -11,8 +11,8 @@ export interface RunCreateBody {
 export function useRuns() {
   const listRuns = (projectId: number | string) => apiFetch<Run[]>(`/projects/${projectId}/runs`);
   const getRun = (id: number | string) => apiFetch<Run>(`/runs/${id}`);
-  const createRun = (projectId: number | string, body: RunCreateBody) =>
-    apiFetch<Run>(`/projects/${projectId}/runs`, { method: "POST", body });
+  const createRun = (projectId: number | string, body: RunCreateBody, signal?: AbortSignal) =>
+    apiFetch<Run>(`/projects/${projectId}/runs`, { method: "POST", body, signal });
 
   const createSweep = (
     projectId: number | string,

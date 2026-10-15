@@ -47,7 +47,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   return [
     groupItems,
     [
-      { label: "All projects", icon: "i-lucide-layout-grid", onSelect: () => router.push("/projects") },
+      { label: "All projects", icon: "i-lucide-layout-grid", onSelect: () => router.push("/projects?all=1") },
       { label: "New project", icon: "i-lucide-plus", onSelect: () => (showNewProject.value = true) },
     ],
   ];
@@ -80,18 +80,20 @@ async function submitNewProject() {
       aria-label="Switch project"
     >
       <span
-        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md text-xs font-bold text-inverted"
-        :style="{ background: currentProject?.color ?? '#16a34a' }"
+        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md text-xs font-bold"
+        :class="currentProject ? 'text-inverted' : 'bg-elevated text-muted'"
+        :style="currentProject ? { background: currentProject.color } : undefined"
       >
-        {{ currentProject ? initials(currentProject.name) : "—" }}
+        <template v-if="currentProject">{{ initials(currentProject.name) }}</template>
+        <UIcon v-else name="i-lucide-layout-grid" class="size-4" />
       </span>
       <span class="flex min-w-0 flex-col leading-tight">
         <span class="truncate text-sm font-semibold text-highlighted">
-          {{ currentProject?.name ?? "Select project" }}
+          {{ currentProject?.name ?? "All projects" }}
         </span>
         <span class="truncate text-xs text-muted">{{ currentProject?.client ?? "" }}</span>
       </span>
-      <UIcon name="i-lucide-chevrons-up-down" class="ml-auto size-4 shrink-0 text-dimmed" />
+      <UIcon name="i-lucide-chevrons-up-down" class="ml-auto size-4 shrink-0 text-muted" />
     </button>
   </UDropdownMenu>
 

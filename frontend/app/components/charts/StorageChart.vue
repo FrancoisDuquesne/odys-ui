@@ -16,18 +16,18 @@ function socOption(storage: StorageAsset) {
     grid: { left: 56, right: 16, top: 24, bottom: 24 },
     tooltip: tooltip({ valueFormatter: (v: number) => `${Number(v).toFixed(0)}%` }),
     xAxis: xAxis(stepLabels(d.soc.length, hrs.value), { axisLabel: { show: false } }),
-    yAxis: yAxis("State of charge", { min: 0, max: 100, axisLabel: { color: c.value.text, fontSize: 12, formatter: "{value}%" } }),
+    yAxis: yAxis("Charge level", { min: 0, max: 100, axisLabel: { color: c.value.text, fontSize: 12, formatter: "{value}%" } }),
     series: [
       {
         type: "line",
         data: d.soc.map((v) => v * 100),
         symbol: "none",
-        lineStyle: { width: 2, color: SERIES.storageDischarge },
-        itemStyle: { color: SERIES.storageDischarge },
-        areaStyle: { color: SERIES.storageDischarge, opacity: 0.08 },
+        lineStyle: { width: 2, color: c.value.strong },
+        itemStyle: { color: c.value.strong },
+        areaStyle: { color: c.value.strong, opacity: 0.08 },
         markArea: {
           silent: true,
-          itemStyle: { color: SERIES.storageDischarge, opacity: 0.06 },
+          itemStyle: { color: c.value.text, opacity: 0.07 },
           data: [[{ yAxis: storage.soc_min * 100 }, { yAxis: storage.soc_max * 100 }]],
         },
         markLine:
@@ -37,7 +37,7 @@ function socOption(storage: StorageAsset) {
                 symbol: "none",
                 lineStyle: { type: "dashed", color: c.value.strong },
                 data: [{ yAxis: storage.soc_end * 100 }],
-                label: { formatter: "soc_end", color: c.value.text },
+                label: { formatter: "Target end level", color: c.value.text },
               }
             : undefined,
       },
@@ -52,12 +52,19 @@ function powerOption(storage: StorageAsset) {
     grid: { left: 56, right: 16, top: 24, bottom: 28 },
     tooltip: tooltip({ valueFormatter: (v: number) => `${fmtMW(Number(v), 1)} ${Number(v) >= 0 ? "(discharging)" : "(charging)"}` }),
     xAxis: xAxis(stepLabels(d.net_power.length, hrs.value)),
-    yAxis: yAxis("Net power MW"),
+    yAxis: yAxis("MW"),
     series: [
       {
         type: "bar",
         data: d.net_power,
         itemStyle: { color: (p: { value: number }) => (p.value >= 0 ? SERIES.storageDischarge : SERIES.storageCharge) },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          lineStyle: { color: c.value.text, width: 1 },
+          label: { position: "insideStartBottom", formatter: "Charging below ↓", color: c.value.text, fontSize: 11 },
+          data: [{ yAxis: 0 }],
+        },
       },
     ],
   };
@@ -79,13 +86,13 @@ function stats(storage: StorageAsset) {
 
 <template>
   <div class="flex flex-col gap-4">
-    <Panel v-for="storage in storages" :key="storage.name" :title="storage.name" :description="`${fmtMWh(storage.capacity)} · ${fmtMW(storage.max_power)} · SoC window ${fmtPct(storage.soc_min)}–${fmtPct(storage.soc_max)}`">
+    <Panel v-for="storage in storages" :key="storage.name" :title="storage.name" :description="`${fmtMWh(storage.capacity)} · ${fmtMW(storage.max_power)} · allowed charge range ${fmtPct(storage.soc_min)}–${fmtPct(storage.soc_max)}`">
       <template v-if="stats(storage)" #actions>
         <dl class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
           <div><dt class="inline">Throughput </dt><dd class="inline font-mono text-default">{{ fmtMWh(stats(storage)!.throughput) }}</dd></div>
           <div><dt class="inline">Cycles </dt><dd class="inline font-mono text-default">{{ stats(storage)!.cycles.toFixed(2) }}</dd></div>
           <div>
-            <dt class="inline">Final SoC </dt>
+            <dt class="inline">Final charge </dt>
             <dd class="inline font-mono text-default">{{ fmtMWh(stats(storage)!.finalSoc) }}<template v-if="stats(storage)!.target !== null"> / target {{ fmtMWh(stats(storage)!.target) }}</template></dd>
           </div>
           <div v-if="stats(storage)!.degCost"><dt class="inline">Degradation </dt><dd class="inline font-mono text-default">{{ fmtMoneyFull(stats(storage)!.degCost) }}</dd></div>
@@ -93,7 +100,11 @@ function stats(storage: StorageAsset) {
       </template>
       <VChart :option="socOption(storage)" autoresize style="height: 150px" />
       <VChart :option="powerOption(storage)" autoresize style="height: 120px" />
-      <p class="mt-1 text-xs text-dimmed">Shaded band = allowed SoC window. Net power: positive discharges, negative charges.</p>
+      <p class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+        <span>Charge level over time; the shaded band is the allowed range.</span>
+        <span class="flex items-center gap-1.5"><span class="size-2.5 rounded-sm" :style="{ background: SERIES.storageDischarge }" />Discharging</span>
+        <span class="flex items-center gap-1.5"><span class="size-2.5 rounded-sm" :style="{ background: SERIES.storageCharge }" />Charging</span>
+      </p>
     </Panel>
     <EmptyState v-if="storages.length === 0" icon="i-lucide-battery" title="No storage in this portfolio" />
   </div>

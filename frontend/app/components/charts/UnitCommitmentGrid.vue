@@ -6,6 +6,8 @@ const props = defineProps<{
   generators: GeneratorAsset[];
   assetColors: Record<string, string>;
   stepHours?: number;
+  /** Optional market price series per market ($/MWh); enables the opportunity hint for idle units. */
+  marketPrices?: Record<string, number[]>;
 }>();
 
 const hrs = computed(() => props.stepHours ?? 1);
@@ -31,6 +33,21 @@ function cellTitle(gen: GeneratorAsset, t: number) {
   return `${stepTimeLabel(t, hrs.value)} · ${on ? "on" : "off"} · ${fmtMW(d.power[t] ?? 0)}${isStartup(gen, t) ? " · startup" : ""}`;
 }
 
+const priceRange = computed(() => {
+  const all = Object.values(props.marketPrices ?? {}).flat();
+  return all.length ? { min: Math.min(...all), max: Math.max(...all) } : null;
+});
+
+// Explains an idle unit using only the data we have (cost, min power, price range).
+function idleNote(gen: GeneratorAsset) {
+  const pr = priceRange.value;
+  if (!pr) return "Never committed in this scenario.";
+  const cost = fmtPrice(gen.variable_cost);
+  if (pr.max < gen.variable_cost)
+    return `Never committed in this scenario. Its variable cost (${cost}) is above the highest market price (${fmtPrice(pr.max)}), so it is never economic to run.`;
+  return `Never committed in this scenario. Market prices reach ${fmtPrice(pr.max)} (variable cost ${cost}), but the margin did not cover the startup cost (${fmtMoneyFull(gen.startup_cost)}) and minimum output (${fmtMW(gen.min_power)}) while committed.`;
+}
+
 function stat(gen: GeneratorAsset) {
   const d = props.scenario.generators[gen.name];
   const startups = d.startup.filter((v) => v > 0.5).length;
@@ -40,7 +57,7 @@ function stat(gen: GeneratorAsset) {
 
 <template>
   <div class="flex flex-col gap-4">
-    <Panel v-for="gen in ucGenerators" :key="gen.name" :title="gen.name" :description="`min up ${gen.min_up_time} · min down ${gen.min_down_time} steps · min power ${fmtMW(gen.min_power)}`">
+    <Panel v-for="gen in ucGenerators" :key="gen.name" :title="gen.name" :description="`Minimum up time ${gen.min_up_time} steps · minimum down time ${gen.min_down_time} steps · minimum output ${fmtMW(gen.min_power)}`">
       <template #actions>
         <dl class="flex flex-wrap gap-x-5 text-xs text-muted">
           <div><dt class="inline">On </dt><dd class="inline font-mono text-default">{{ stat(gen).hoursOn.toFixed(1) }} h</dd></div>
@@ -48,6 +65,9 @@ function stat(gen: GeneratorAsset) {
           <div><dt class="inline">Startup cost </dt><dd class="inline font-mono text-default">{{ fmtMoneyFull(stat(gen).cost) }}</dd></div>
         </dl>
       </template>
+      <p v-if="stat(gen).hoursOn === 0" class="mb-2 flex items-start gap-1.5 text-sm text-muted">
+        <UIcon name="i-lucide-info" class="mt-0.5 size-4 shrink-0" />{{ idleNote(gen) }}
+      </p>
       <div class="flex gap-px rounded-md bg-muted p-px" role="img" :aria-label="`${gen.name} on/off timeline`">
         <div
           v-for="t in nSteps"
@@ -64,7 +84,7 @@ function stat(gen: GeneratorAsset) {
       </div>
     </Panel>
     <div v-if="ucGenerators.length" class="flex flex-wrap items-center gap-4 text-xs text-muted">
-      <span class="flex items-center gap-1.5"><span class="size-3 rounded-sm bg-elevated" />Off</span>
+      <span class="flex items-center gap-1.5"><span class="size-3 rounded-sm bg-elevated" />Off (not committed)</span>
       <span class="flex items-center gap-1.5"><span class="size-3 rounded-sm bg-neutral-400" />On (opacity = output / nominal power)</span>
       <span class="flex items-center gap-1.5"><span class="h-3 w-[3px] bg-inverted" />Startup</span>
     </div>
@@ -74,7 +94,7 @@ function stat(gen: GeneratorAsset) {
       title="No unit-commitment generators"
       description="Enable unit commitment on a generator in the portfolio to see its on/off timeline."
     />
-    <p v-else-if="ucGenerators.length < generators.length" class="text-xs text-dimmed">
+    <p v-else-if="ucGenerators.length < generators.length" class="text-xs text-muted">
       Generators without unit-commitment parameters ({{ generators.filter((g) => !g.unit_commitment).map((g) => g.name).join(", ") }}) are not shown.
     </p>
   </div>

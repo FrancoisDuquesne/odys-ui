@@ -5,12 +5,12 @@ export function useChartTheme() {
   const dark = computed(() => mode.value === "dark");
 
   const c = computed(() => ({
-    text: dark.value ? "#cbd5e1" : "#475569",
-    strong: dark.value ? "#f1f5f9" : "#0f172a",
-    muted: dark.value ? "#64748b" : "#94a3b8",
-    grid: dark.value ? "#1e293b" : "#e2e8f0",
-    axis: dark.value ? "#334155" : "#cbd5e1",
-    surface: dark.value ? "#0f172a" : "#ffffff",
+    text: dark.value ? "#cfcbb5" : "#565971",
+    strong: dark.value ? "#f4f1de" : "#212338",
+    muted: dark.value ? "#9a9aa8" : "#676a82",
+    grid: dark.value ? "#2e3047" : "#e6e2cc",
+    axis: dark.value ? "#3d405b" : "#cfcbb5",
+    surface: dark.value ? "#212338" : "#fdfcf6",
   }));
 
   const font = { fontFamily: "IBM Plex Mono, ui-monospace, monospace", fontSize: 12 };
@@ -31,7 +31,7 @@ export function useChartTheme() {
     return {
       type: "value",
       name,
-      nameTextStyle: { ...font, color: c.value.muted, align: "left" },
+      nameTextStyle: { ...font, color: c.value.text, align: "left" },
       axisLabel: { ...font, color: c.value.text },
       axisLine: { show: false },
       axisTick: { show: false },
@@ -52,11 +52,17 @@ export function useChartTheme() {
     };
   }
 
+  // Tooltip row helper: coloured dot, label, right-aligned value.
+  function tipRow(color: string, label: string, value: string) {
+    return `<div style="display:flex;align-items:center;gap:8px;line-height:1.6"><span style="width:8px;height:8px;border-radius:2px;background:${color};flex:none"></span><span style="flex:1;color:${c.value.text}">${label}</span><b style="font-family:${font.fontFamily};font-weight:500;padding-left:12px">${value}</b></div>`;
+  }
+
   function legend(data?: string[], extra: Record<string, unknown> = {}) {
     return {
       data,
       top: 0,
-      left: 48,
+      left: 0,
+      width: "100%",
       icon: "roundRect",
       itemWidth: 10,
       itemHeight: 10,
@@ -67,5 +73,5 @@ export function useChartTheme() {
     };
   }
 
-  return { c, dark, font, xAxis, yAxis, tooltip, legend };
+  return { c, dark, font, xAxis, yAxis, tooltip, tipRow, legend };
 }

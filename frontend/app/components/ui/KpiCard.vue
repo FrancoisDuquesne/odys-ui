@@ -30,7 +30,7 @@ const deltaClass = { good: "text-success", bad: "text-error", neutral: "text-mut
       <UIcon v-if="icon" :name="icon" class="size-3.5 shrink-0" />
       <span class="truncate">{{ label }}</span>
       <UTooltip v-if="hint" :text="hint">
-        <UIcon name="i-lucide-info" class="size-3.5 shrink-0 cursor-help text-dimmed" />
+        <UIcon name="i-lucide-info" class="size-3.5 shrink-0 cursor-help text-muted" />
       </UTooltip>
     </div>
     <div class="font-mono font-semibold tabular-nums" :class="[toneClass[tone], size === 'hero' ? 'text-4xl' : 'text-xl']">{{ value }}</div>
@@ -38,7 +38,7 @@ const deltaClass = { good: "text-success", bad: "text-error", neutral: "text-mut
       <UIcon v-if="delta.icon" :name="delta.icon" class="size-3.5" />
       <span>{{ delta.text }}</span>
     </div>
-    <p v-if="sub" class="truncate text-xs text-dimmed" :title="sub">{{ sub }}</p>
+    <p v-if="sub" class="line-clamp-2 text-xs text-muted" :title="sub">{{ sub }}</p>
     <slot />
   </div>
 </template>

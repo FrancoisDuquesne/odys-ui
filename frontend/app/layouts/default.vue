@@ -5,6 +5,7 @@ const route = useRoute();
 const { ensureLoaded, error: projectsError, refresh: refreshProjects } = useProjectsState();
 const { currentProject, currentProjectId } = useCurrentProject();
 const { listPortfolioVersions } = usePortfolio();
+const { listScenarioSets } = useScenarioSets();
 
 await ensureLoaded();
 
@@ -18,12 +19,14 @@ async function retry() {
 }
 
 const assetCount = ref(0);
+const scenarioSetCount = ref(0);
 
 watch(
   [currentProjectId, () => route.fullPath],
   async ([id]) => {
     if (!id) {
       assetCount.value = 0;
+      scenarioSetCount.value = 0;
       return;
     }
     try {
@@ -31,6 +34,12 @@ watch(
       assetCount.value = versions.at(-1)?.assets.length ?? 0;
     } catch {
       assetCount.value = 0;
+    }
+    try {
+      // Versions of one set share its name, so count names, not rows.
+      scenarioSetCount.value = new Set((await listScenarioSets(id)).map((s) => s.name)).size;
+    } catch {
+      scenarioSetCount.value = 0;
     }
   },
   { immediate: true },
@@ -44,6 +53,7 @@ const nav = computed<NavigationMenuItem[]>(() => {
   return [
     { label: "Runs", icon: "i-lucide-history", to: `${base}/runs`, active: runsActive, badge: currentProject.value?.run_count ?? 0 },
     { label: "Portfolio", icon: "i-lucide-boxes", to: `${base}/portfolio`, active: path.value.endsWith("/portfolio"), badge: assetCount.value },
+    { label: "Scenarios", icon: "i-lucide-chart-spline", to: `${base}/scenarios`, active: path.value.endsWith("/scenarios"), badge: scenarioSetCount.value },
   ];
 });
 </script>
@@ -57,10 +67,8 @@ const nav = computed<NavigationMenuItem[]>(() => {
       :ui="{ header: 'border-b border-default', footer: 'border-t border-default' }"
     >
       <template #header="{ collapsed }">
-        <NuxtLink to="/" class="flex items-center gap-2 px-2" aria-label="odys home">
-          <span class="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-inverted">
-            <UIcon name="i-lucide-zap" class="size-4" />
-          </span>
+        <NuxtLink to="/" class="flex w-full items-center gap-2" :class="collapsed ? 'justify-center' : 'px-2'" aria-label="odys home">
+          <OdysLogo class="size-8 shrink-0" />
           <span v-if="!collapsed" class="text-base font-semibold tracking-tight text-highlighted">odys</span>
         </NuxtLink>
       </template>
@@ -78,14 +86,16 @@ const nav = computed<NavigationMenuItem[]>(() => {
       </template>
 
       <template #footer="{ collapsed }">
-        <div class="flex w-full items-center gap-2.5 px-2 py-2">
-          <UAvatar text="AK" size="sm" />
+        <div class="flex w-full items-center gap-2.5 px-2 py-2" :class="collapsed ? 'flex-col' : ''">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-elevated text-muted" aria-hidden="true">
+            <UIcon name="i-lucide-building-2" class="size-4" />
+          </span>
           <span v-if="!collapsed" class="flex min-w-0 flex-col leading-tight">
-            <span class="truncate text-sm font-medium text-highlighted">Ana Kovač</span>
-            <span class="truncate text-xs text-muted">{{ currentProject?.client ?? "Northbay Energy" }}</span>
+            <span class="truncate text-sm font-medium text-highlighted">{{ currentProject?.client ?? "Workspace" }}</span>
+            <span v-if="currentProject" class="truncate text-xs text-muted">Workspace</span>
           </span>
           <ClientOnly>
-            <UColorModeButton v-if="!collapsed" class="ml-auto" color="neutral" variant="ghost" size="sm" />
+            <UColorModeButton :class="collapsed ? '' : 'ml-auto'" color="neutral" variant="ghost" size="sm" />
           </ClientOnly>
         </div>
       </template>

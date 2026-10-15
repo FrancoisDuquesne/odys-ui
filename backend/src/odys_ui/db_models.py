@@ -15,7 +15,7 @@ class Project(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     client: str
-    color: str = "#16a34a"
+    color: str = "#5f9a80"
     created_at: datetime = Field(default_factory=_utcnow)
 
 

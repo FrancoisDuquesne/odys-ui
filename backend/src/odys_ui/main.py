@@ -8,11 +8,12 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from odys_ui import schemas
 from odys_ui.db import engine, get_session, init_db
-from odys_ui.db_models import Actuals, PortfolioVersion, Project, Run, ScenarioSetVersion
+from odys_ui.db_models import Actuals, PortfolioVersion, Project, Run, ScenarioSetVersion, _utcnow
 from odys_ui.solver import run_optimization
 
 app = FastAPI(title="Odys UI Backend")
@@ -114,14 +115,19 @@ def get_project(project_id: int, session: SessionDep) -> Project:
 # ---------------------------------------------------------------------------
 
 
+def _portfolio_out(session: Session, pv: PortfolioVersion) -> schemas.PortfolioVersionOut:
+    run_count = session.exec(select(func.count()).select_from(Run).where(Run.portfolio_version_id == pv.id)).one()
+    return schemas.PortfolioVersionOut(**pv.model_dump(), run_count=run_count)
+
+
 @app.get("/api/projects/{project_id}/portfolios", response_model=list[schemas.PortfolioVersionOut])
-def list_portfolio_versions(project_id: int, session: SessionDep) -> list[PortfolioVersion]:
+def list_portfolio_versions(project_id: int, session: SessionDep) -> list[schemas.PortfolioVersionOut]:
     rows = session.exec(
         select(PortfolioVersion)
         .where(PortfolioVersion.project_id == project_id)
         .order_by(PortfolioVersion.version),  # type: ignore[arg-type]
     ).all()
-    return rows
+    return [_portfolio_out(session, pv) for pv in rows]
 
 
 @app.post("/api/projects/{project_id}/portfolios", response_model=schemas.PortfolioVersionOut)
@@ -129,7 +135,8 @@ def create_portfolio_version(
     project_id: int,
     body: schemas.PortfolioVersionCreate,
     session: SessionDep,
-) -> PortfolioVersion:
+) -> schemas.PortfolioVersionOut:
+    """Save a portfolio. A version nobody has run against is still a draft, so it is updated in place."""
     if not session.get(Project, project_id):
         raise HTTPException(404, "Project not found")
     existing = session.exec(
@@ -138,30 +145,46 @@ def create_portfolio_version(
             PortfolioVersion.name == body.name,
         ),
     ).all()
-    next_version = (max((pv.version for pv in existing), default=0)) + 1
+    assets = [a.model_dump() for a in body.assets]
+    latest = max(existing, key=lambda pv: pv.version, default=None)
+    if latest is not None and _portfolio_out(session, latest).run_count == 0:
+        latest.assets = assets
+        latest.created_at = _utcnow()
+        session.add(latest)
+        session.commit()
+        session.refresh(latest)
+        return _portfolio_out(session, latest)
     pv = PortfolioVersion(
         project_id=project_id,
         name=body.name,
-        version=next_version,
-        assets=[a.model_dump() for a in body.assets],
+        version=(latest.version if latest else 0) + 1,
+        assets=assets,
     )
     session.add(pv)
     session.commit()
     session.refresh(pv)
-    return pv
+    return _portfolio_out(session, pv)
 
 
 @app.get("/api/portfolio-versions/{version_id}", response_model=schemas.PortfolioVersionOut)
-def get_portfolio_version(version_id: int, session: SessionDep) -> PortfolioVersion:
+def get_portfolio_version(version_id: int, session: SessionDep) -> schemas.PortfolioVersionOut:
     pv = session.get(PortfolioVersion, version_id)
     if not pv:
         raise HTTPException(404, "Portfolio version not found")
-    return pv
+    return _portfolio_out(session, pv)
 
 
 # ---------------------------------------------------------------------------
 # Scenario sets
 # ---------------------------------------------------------------------------
+
+
+def _next_scenario_set_version(session: Session, project_id: int, name: str) -> int:
+    """Versions count per set name, like portfolios: saving "Winter" again makes v2 of "Winter"."""
+    existing = session.exec(
+        select(ScenarioSetVersion).where(ScenarioSetVersion.project_id == project_id, ScenarioSetVersion.name == name),
+    ).all()
+    return max((s.version for s in existing), default=0) + 1
 
 
 @app.get("/api/projects/{project_id}/scenario-sets", response_model=list[schemas.ScenarioSetOut])
@@ -181,8 +204,7 @@ def create_scenario_set(
 ) -> ScenarioSetVersion:
     if not session.get(Project, project_id):
         raise HTTPException(404, "Project not found")
-    existing = session.exec(select(ScenarioSetVersion).where(ScenarioSetVersion.project_id == project_id)).all()
-    next_version = (max((s.version for s in existing), default=0)) + 1
+    next_version = _next_scenario_set_version(session, project_id, body.name)
     ss = ScenarioSetVersion(
         project_id=project_id,
         name=body.name,
@@ -233,12 +255,11 @@ async def upload_scenario_csv(project_id: int, session: SessionDep, file: Upload
         elif col.startswith("price:"):
             market_prices[col[6:]] = values
 
-    existing = session.exec(select(ScenarioSetVersion).where(ScenarioSetVersion.project_id == project_id)).all()
-    next_version = (max((s.version for s in existing), default=0)) + 1
+    set_name = file.filename or "Uploaded set"
     ss = ScenarioSetVersion(
         project_id=project_id,
-        name=file.filename or "Uploaded set",
-        version=next_version,
+        name=set_name,
+        version=_next_scenario_set_version(session, project_id, set_name),
         mode="deterministic",
         number_of_steps=len(rows),
         timestep_hours=1.0,

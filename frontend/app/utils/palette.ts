@@ -2,10 +2,10 @@ import type { Asset } from "~/types";
 
 // Default colour per asset kind, used when an asset has no colour of its own.
 export const ASSET_DEFAULT_COLOR: Record<Asset["kind"], string> = {
-  generator: "#0d9488",
-  storage: "#a855f7",
-  load: "#475569",
-  market: "#4f46e5",
+  generator: "#5f9a80",
+  storage: "#e07a5f",
+  load: "#676a82",
+  market: "#e9b45e",
 };
 
 export const ASSET_KIND_LABEL: Record<Asset["kind"], string> = {
@@ -24,15 +24,17 @@ export const ASSET_KIND_ICON: Record<Asset["kind"], string> = {
 
 // Derived dispatch series have fixed semantics everywhere in the app.
 export const SERIES = {
-  storageDischarge: "#a855f7",
-  storageCharge: "#e9b3f7",
-  marketBuy: "#6366f1",
-  marketSell: "#b4bcfa",
-  price: "#6b7280",
+  // Each role has its own hue (above-zero pair: green/blue, below-zero pair: pink/amber) so pairs stay distinguishable
+  // for colour-blind readers and on both light and dark surfaces.
+  storageDischarge: "#5f9a80", // green
+  storageCharge: "#e07a5f", // pink
+  marketBuy: "#6a70a8", // blue
+  marketSell: "#e9b45e", // amber
+  price: "#8a94a6",
   tail: "#ef4444",
   neutral: "#94a3b8",
   good: "#16a34a",
-  planned: "#6366f1",
+  planned: "#6a70a8",
 } as const;
 
 export function assetColorMap(assets: Asset[] | undefined | null): Record<string, string> {

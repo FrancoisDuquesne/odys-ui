@@ -25,7 +25,7 @@ def _price_profile(base: float, peak_add: float) -> list[float]:
 
 
 ASSETS = [
-    {"kind": "generator", "name": "Wind 1", "nominal_power": 120.0, "variable_cost": 2.0, "color": "#0ea5e9"},
+    {"kind": "generator", "name": "Wind 1", "nominal_power": 120.0, "variable_cost": 2.0, "color": "#81b29a"},
     {
         "kind": "generator",
         "name": "CCGT 1",
@@ -38,7 +38,7 @@ ASSETS = [
         "min_up_time": 4,
         "min_down_time": 3,
         "startup_cost": 12000.0,
-        "color": "#f59e0b",
+        "color": "#e9b45e",
     },
     {
         "kind": "generator",
@@ -50,7 +50,7 @@ ASSETS = [
         "min_up_time": 2,
         "min_down_time": 2,
         "startup_cost": 4000.0,
-        "color": "#ea580c",
+        "color": "#e07a5f",
     },
     {
         "kind": "storage",
@@ -64,22 +64,22 @@ ASSETS = [
         "efficiency_charging": 0.95,
         "efficiency_discharging": 0.95,
         "degradation_cost": 3.0,
-        "color": "#d946ef",
+        "color": "#6a70a8",
     },
-    {"kind": "load", "name": "Site demand", "type": "fixed", "color": "#475569"},
+    {"kind": "load", "name": "Site demand", "type": "fixed", "color": "#8d90a8"},
     {
         "kind": "market",
         "name": "Day Ahead",
         "max_trading_volume_per_step": 150.0,
         "trade_direction": "buy_and_sell",
         "stage_fixed": True,
-        "color": "#6366f1",
+        "color": "#b5b8d6",
     },
 ]
 
 
 def run(session: Session) -> None:
-    project = Project(name="Kestrel Ridge", client="Northbay Energy", color="#16a34a")
+    project = Project(name="Kestrel Ridge", client="Northbay Energy", color="#5f9a80")
     session.add(project)
     session.commit()
     session.refresh(project)

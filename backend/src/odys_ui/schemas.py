@@ -108,6 +108,7 @@ class PortfolioVersionOut(BaseModel):
     version: int
     assets: list[dict[str, Any]]
     created_at: datetime
+    run_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +192,7 @@ class SweepCreateRequest(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     client: str
-    color: str = "#16a34a"
+    color: str = "#5f9a80"
 
 
 class ProjectOut(BaseModel):

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const router = useRouter();
+const route = useRoute();
 const { projects, ensureLoaded } = useProjectsState();
 const loadError = ref(false);
 async function load() {
@@ -11,6 +12,12 @@ async function load() {
   }
 }
 await load();
+
+// A single project has nothing to choose from: go straight to its runs.
+// "All projects" in the switcher links here with ?all=1 to opt out.
+if (!loadError.value && projects.value.length === 1 && !route.query.all) {
+  await navigateTo(`/p/${projects.value[0]!.id}/runs`, { replace: true });
+}
 
 const query = ref("");
 const filtered = computed(() => {
@@ -39,32 +46,32 @@ const filtered = computed(() => {
       <EmptyState v-else-if="projects.length === 0" icon="i-lucide-layout-grid" title="No projects yet" description="Use the project switcher in the sidebar to create your first project." />
       <Panel v-else flush>
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[820px] text-sm">
-            <thead class="bg-muted text-left text-xs font-semibold text-muted">
+          <table class="w-full min-w-[560px] md:min-w-[820px] text-sm">
+            <thead class="bg-ink-950/[0.05] dark:bg-black/25 text-left text-xs font-semibold text-muted">
               <tr>
                 <th scope="col" class="px-4 py-2.5">Project / site</th>
                 <th scope="col" class="px-3 py-2.5">Client</th>
-                <th scope="col" class="px-3 py-2.5 text-right">Portfolios</th>
-                <th scope="col" class="px-3 py-2.5 text-right">Scenario sets</th>
+                <th scope="col" class="hidden px-3 py-2.5 text-right md:table-cell">Portfolios</th>
+                <th scope="col" class="hidden px-3 py-2.5 text-right md:table-cell">Scenario sets</th>
                 <th scope="col" class="px-3 py-2.5 text-right">Runs</th>
                 <th scope="col" class="px-3 py-2.5">Last run</th>
                 <th scope="col" class="px-4 py-2.5 text-right">Last objective</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in filtered" :key="p.id" class="cursor-pointer border-t border-muted hover:bg-muted" @click="router.push(`/p/${p.id}/runs`)">
+              <tr v-for="p in filtered" :key="p.id" class="cursor-pointer border-t border-muted hover:bg-elevated/60" @click="router.push(`/p/${p.id}/runs`)">
                 <td class="px-4 py-3">
-                  <NuxtLink :to="`/p/${p.id}/runs`" class="font-semibold text-highlighted" @click.stop>{{ p.name }}</NuxtLink>
+                  <NuxtLink :to="`/p/${p.id}/runs`" class="font-semibold text-highlighted hover:text-primary" @click.stop>{{ p.name }}</NuxtLink>
                   <div class="text-xs text-muted">{{ p.asset_summary }}</div>
                 </td>
                 <td class="px-3 py-3 text-default">{{ p.client }}</td>
-                <td class="px-3 py-3 text-right font-mono">{{ p.portfolio_count }}</td>
-                <td class="px-3 py-3 text-right font-mono">{{ p.scenario_set_count }}</td>
+                <td class="hidden px-3 py-3 text-right font-mono md:table-cell">{{ p.portfolio_count }}</td>
+                <td class="hidden px-3 py-3 text-right font-mono md:table-cell">{{ p.scenario_set_count }}</td>
                 <td class="px-3 py-3 text-right font-mono">{{ p.run_count }}</td>
                 <td class="px-3 py-3 text-default">{{ fmtDate(p.last_run_at) }}</td>
                 <td class="px-4 py-3 text-right font-mono text-highlighted">{{ fmtMoney(p.last_objective_value) }}</td>
               </tr>
-              <tr v-if="filtered.length === 0"><td colspan="7" class="px-4 py-10 text-center text-muted">No projects match “{{ query }}”.</td></tr>
+              <tr v-if="filtered.length === 0"><td colspan="5" class="px-4 py-10 text-center text-muted">No projects match “{{ query }}”.</td></tr>
             </tbody>
           </table>
         </div>

@@ -1,5 +1,6 @@
 <template>
   <UApp>
+    <LogoSplash />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

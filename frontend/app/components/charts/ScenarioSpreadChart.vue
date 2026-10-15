@@ -17,10 +17,10 @@ const barOption = computed(() => {
     return { value: s.profit, itemStyle: { color: inTail ? SERIES.tail : c.value.muted } };
   });
   return {
-    grid: { left: 64, right: 16, top: 24, bottom: 56 },
+    grid: { left: 64, right: 16, top: 24, bottom: 64 },
     tooltip: tooltip({ valueFormatter: (v: number) => fmtMoneyFull(v) }),
-    xAxis: xAxis(sorted.value.map((s) => `${s.name} (p=${s.probability.toFixed(2)})`), { axisLabel: { color: c.value.text, fontSize: 12, interval: 0, rotate: 20 } }),
-    yAxis: yAxis("Profit $", { axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }),
+    xAxis: xAxis(sorted.value.map((s) => `${s.name} (p=${s.probability.toFixed(2)})`), { axisLabel: { color: c.value.text, fontSize: 12, interval: 0, rotate: 30 } }),
+    yAxis: yAxis("Profit ($)", { axisLabel: { color: c.value.text, fontSize: 12, formatter: (v: number) => fmtMoney(v) } }),
     series: [{ type: "bar", data, barMaxWidth: 40 }],
   };
 });
@@ -37,7 +37,7 @@ const socOption = computed(() => {
     grid: { left: 56, right: 16, top: 24, bottom: 28 },
     tooltip: tooltip({ valueFormatter: (v: number) => `${Number(v).toFixed(0)}%` }),
     xAxis: xAxis(stepLabels(n, props.stepHours ?? 1)),
-    yAxis: yAxis("SoC", { min: 0, max: 100, axisLabel: { color: c.value.text, fontSize: 12, formatter: "{value}%" } }),
+    yAxis: yAxis("Charge level", { min: 0, max: 100, axisLabel: { color: c.value.text, fontSize: 12, formatter: "{value}%" } }),
     series: Object.entries(props.results.by_scenario).map(([name, s]) => {
       const selected = name === props.selectedScenario;
       return {
@@ -57,14 +57,14 @@ const socOption = computed(() => {
 
 <template>
   <div class="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-4">
-    <Panel title="Profit by scenario" description="Sorted worst → best. Red bars are the CVaR tail.">
+    <Panel title="Profit by scenario" description="Sorted from worst to best. Red bars are the worst-case scenarios that make up the tail-risk (CVaR) measure.">
       <VChart :option="barOption" autoresize style="height: 240px" />
       <template #footer>
-        <span class="font-mono">E[profit] {{ fmtMoney(results.expected_profit) }}</span>
-        <span v-if="results.cvar !== null" class="ml-4 font-mono">CVaR {{ fmtMoney(results.cvar) }}</span>
+        <span class="font-mono">Expected profit {{ fmtMoney(results.expected_profit) }}</span>
+        <span v-if="results.cvar !== null" class="ml-4 font-mono">Tail-risk (CVaR) {{ fmtMoney(results.cvar) }}</span>
       </template>
     </Panel>
-    <Panel v-if="storageName" :title="`${storageName} SoC across scenarios`" description="Selected scenario highlighted">
+    <Panel v-if="storageName" :title="`${storageName} charge level across scenarios`" description="Battery charge level in every scenario; the selected scenario is highlighted">
       <VChart :option="socOption" autoresize style="height: 240px" />
     </Panel>
   </div>

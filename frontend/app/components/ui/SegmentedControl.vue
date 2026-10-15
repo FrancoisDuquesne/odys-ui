@@ -14,11 +14,11 @@ const name = useId();
 </script>
 
 <template>
-  <div role="radiogroup" :aria-label="label" class="inline-flex flex-wrap gap-0.5 rounded-md bg-elevated p-0.5">
+  <div role="radiogroup" :aria-label="label" class="inline-flex flex-wrap gap-0.5 rounded-[calc(var(--ui-radius)+2px)] bg-elevated p-0.5">
     <label
       v-for="item in props.items"
       :key="String(item.value)"
-      class="relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded px-2.5 text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary"
+      class="relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-(--ui-radius) px-2.5 text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary"
       :class="[
         size === 'md' ? 'h-8' : 'h-7',
         model === item.value ? 'bg-default text-highlighted shadow-xs' : 'text-muted hover:text-default',

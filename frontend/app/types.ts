@@ -75,6 +75,7 @@ export interface PortfolioVersion {
   version: number;
   assets: Asset[];
   created_at: string;
+  run_count: number;
 }
 
 export interface ScenarioDef {

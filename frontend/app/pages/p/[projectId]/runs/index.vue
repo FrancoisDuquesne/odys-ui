@@ -144,18 +144,63 @@ function downloadCsv(run: Run) {
   URL.revokeObjectURL(url);
 }
 
-// ---- profit trend --------------------------------------------------------------
+// ---- profit trend + what changed ----------------------------------------------
+const chronological = computed(() => [...runs.value].sort((a, b) => a.id - b.id));
+
 const trend = computed(() =>
-  [...runs.value]
+  chronological.value
     .filter((r) => r.objective_value !== null)
-    .sort((a, b) => a.id - b.id)
-    .slice(-6)
+    .slice(-8)
     .map((r) => ({
       id: r.display_id,
-      label: `set v${scenarioSetById.value.get(r.scenario_set_version_id)?.version ?? "?"}`,
+      label: `${portfolioLabel(r)} · ${scenarioLabel(r)}`,
       value: r.objective_value ?? 0,
     })),
 );
+const trendSummary = computed(() => {
+  const t = trend.value;
+  if (t.length === 0) return "";
+  if (t.length === 1) return "Only one solved run so far.";
+  const first = t[0]!.value;
+  if (t.every((p) => Math.abs(p.value - first) < 0.5)) return `All ${t.length} runs reached the same objective. Dashed line = baseline.`;
+  const best = t.reduce((m, p) => (p.value > m.value ? p : m));
+  return `Best: ${best.id} at ${fmtMoney(best.value)}. Dashed line = baseline (first run).`;
+});
+
+// Each run is compared with the run created just before it.
+const previousById = computed(() => {
+  const m = new Map<number, Run>();
+  chronological.value.forEach((r, i) => {
+    if (i > 0) m.set(r.id, chronological.value[i - 1]!);
+  });
+  return m;
+});
+
+function deltaFor(run: Run): { kind: "baseline" | "same" | "up" | "down"; text: string } | null {
+  if (run.objective_value === null) return null;
+  const prev = previousById.value.get(run.id);
+  if (!prev) return { kind: "baseline", text: "baseline" };
+  if (prev.objective_value === null) return null;
+  const d = run.objective_value - prev.objective_value;
+  if (Math.abs(d) < 0.5) return { kind: "same", text: "no change" };
+  return { kind: d > 0 ? "up" : "down", text: `${fmtMoney(d, { plus: true })} vs ${prev.display_id}` };
+}
+const deltaClass = (k: string) => (k === "up" ? "text-success" : k === "down" ? "text-error" : "text-muted");
+
+function changesFor(run: Run): string[] | null {
+  const prev = previousById.value.get(run.id);
+  if (!prev) return null;
+  const out: string[] = [];
+  const ver = (id: number, map: Map<number, { version: number }>) => `v${map.get(id)?.version ?? "?"}`;
+  if (run.portfolio_version_id !== prev.portfolio_version_id)
+    out.push(`Portfolio ${ver(prev.portfolio_version_id, portfolioById.value)} → ${ver(run.portfolio_version_id, portfolioById.value)}`);
+  if (run.scenario_set_version_id !== prev.scenario_set_version_id)
+    out.push(`Scenarios ${ver(prev.scenario_set_version_id, scenarioSetById.value)} → ${ver(run.scenario_set_version_id, scenarioSetById.value)}`);
+  const w = (r: Run) => r.objective.cvar?.weight ?? 0;
+  if (w(run) !== w(prev)) out.push(`CVaR weight ${w(prev)} → ${w(run)}`);
+  if (run.solver.solver_name !== prev.solver.solver_name) out.push(`Solver ${prev.solver.solver_name} → ${run.solver.solver_name}`);
+  return out;
+}
 
 // ---- plan vs actual -------------------------------------------------------------
 const latestRun = computed(() => [...runs.value].sort((a, b) => b.id - a.id).find((r) => r.results) ?? null);
@@ -213,7 +258,7 @@ async function onActualsFile(e: Event) {
       <ErrorState v-else-if="loadError" :message="loadError" @retry="load" />
       <div v-else class="flex flex-col gap-5">
         <div class="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-4">
-          <Panel title="Objective value by run" description="Higher is better. Losses plot below zero. Same portfolio re-run as forecasts update.">
+          <Panel title="Objective over time" :description="trendSummary || 'Higher is better. Losses plot below zero.'">
             <ClientOnly v-if="trend.length">
               <RunTrendChart :points="trend" />
             </ClientOnly>
@@ -260,8 +305,8 @@ async function onActualsFile(e: Event) {
             </EmptyState>
           </div>
           <div v-else class="overflow-x-auto">
-            <table class="w-full min-w-[900px] text-sm">
-              <thead class="bg-muted text-left text-xs font-semibold text-muted">
+            <table class="w-full min-w-[1000px] text-sm">
+              <thead class="bg-ink-950/[0.05] dark:bg-black/25 text-left text-xs font-semibold text-muted">
                 <tr>
                   <th scope="col" class="px-4 py-2.5">Run</th>
                   <th scope="col" class="px-3 py-2.5" :aria-sort="ariaSort('created')">
@@ -269,8 +314,8 @@ async function onActualsFile(e: Event) {
                       Created <UIcon :name="sortKey === 'created' ? (sortDir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down') : 'i-lucide-arrow-up-down'" class="size-3" />
                     </button>
                   </th>
-                  <th scope="col" class="px-3 py-2.5">Portfolio</th>
-                  <th scope="col" class="px-3 py-2.5">Scenarios · risk</th>
+                  <th scope="col" class="px-3 py-2.5">Inputs</th>
+                  <th scope="col" class="px-3 py-2.5">Changed since previous run</th>
                   <th scope="col" class="px-3 py-2.5 text-right" :aria-sort="ariaSort('objective')">
                     <button type="button" class="inline-flex items-center gap-1" @click="toggleSort('objective')">
                       Objective <UIcon :name="sortKey === 'objective' ? (sortDir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down') : 'i-lucide-arrow-up-down'" class="size-3" />
@@ -289,19 +334,30 @@ async function onActualsFile(e: Event) {
                 <tr
                   v-for="run in visibleRuns"
                   :key="run.id"
-                  class="cursor-pointer border-t border-muted hover:bg-muted"
+                  class="cursor-pointer border-t border-muted hover:bg-elevated/60"
                   @click="router.push(`/p/${projectId}/runs/${run.id}`)"
                 >
                   <td class="px-4 py-2.5">
                     <NuxtLink :to="`/p/${projectId}/runs/${run.id}`" class="font-mono font-medium text-primary" @click.stop>{{ run.display_id }}</NuxtLink>
                   </td>
                   <td class="px-3 py-2.5 text-default">{{ fmtDateTime(run.created_at) }}</td>
-                  <td class="px-3 py-2.5 text-highlighted">{{ portfolioLabel(run) }}</td>
                   <td class="px-3 py-2.5">
-                    <div class="text-highlighted">{{ scenarioLabel(run) }}</div>
+                    <div class="text-highlighted">{{ portfolioLabel(run) }} · {{ scenarioLabel(run) }}</div>
                     <div class="text-xs text-muted">{{ riskLabel(run) }}</div>
                   </td>
-                  <td class="px-3 py-2.5 text-right font-mono text-highlighted">{{ fmtMoney(run.objective_value) }}</td>
+                  <td class="px-3 py-2.5">
+                    <template v-if="changesFor(run)">
+                      <div v-if="changesFor(run)!.length" class="flex flex-wrap gap-1">
+                        <UBadge v-for="c in changesFor(run)" :key="c" color="neutral" variant="subtle" size="sm" :label="c" />
+                      </div>
+                      <span v-else class="text-xs text-muted">Same inputs</span>
+                    </template>
+                    <span v-else class="text-xs text-muted">First run</span>
+                  </td>
+                  <td class="px-3 py-2.5 text-right">
+                    <div class="font-mono text-highlighted">{{ fmtMoney(run.objective_value) }}</div>
+                    <div v-if="deltaFor(run)" class="font-mono text-xs" :class="deltaClass(deltaFor(run)!.kind)">{{ deltaFor(run)!.text }}</div>
+                  </td>
                   <td class="px-3 py-2.5"><StatusBadge :status="run.status" /></td>
                   <td class="px-3 py-2.5 text-right font-mono text-xs text-muted">{{ fmtDuration(run.solve_time_seconds) }}</td>
                   <td class="px-2 py-2.5" @click.stop>

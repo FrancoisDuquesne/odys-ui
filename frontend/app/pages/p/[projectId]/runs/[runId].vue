@@ -97,12 +97,13 @@ const activeTab = computed({
   set: (v: string) => router.replace({ query: { ...route.query, tab: v === "dispatch" ? undefined : v } }),
 });
 
-const startupCount = computed(() => {
-  const scen = Object.values(run.value?.results?.by_scenario ?? {})[0];
-  return scen ? Object.values(scen.generators).reduce((s, g) => s + g.startup.filter((v) => v > 0.5).length, 0) : 0;
-});
+const startupCount = computed(() => verdict.value?.startups ?? 0);
 
-const profitTone = (v: number | null | undefined) => (v == null ? "default" : v >= 0 ? "good" : "bad") as "default" | "good" | "bad";
+// A net cost is a normal outcome for a load-serving portfolio, so it is not shown in alarm red.
+const profitTone = (v: number | null | undefined) => (v != null && v > 0 ? "good" : "default") as "default" | "good" | "bad";
+
+const verdict = computed(() => (run.value ? buildVerdict(run.value, scenarioSet.value) : null));
+const isCost = computed(() => (run.value?.results?.expected_profit ?? 0) < 0);
 
 const bestRun = computed(() =>
   projectRuns.value.reduce<Run | null>((best, r) => (!best || r.results!.expected_profit > best.results!.expected_profit ? r : best), null),
@@ -114,7 +115,7 @@ const profitDelta = computed<KpiDelta | undefined>(() => {
   if (!r?.results || !best || projectRuns.value.length < 2) return undefined;
   if (best.id === r.id) return { text: `Best of ${projectRuns.value.length} runs`, tone: "good", icon: "i-lucide-trophy" };
   const gap = r.results.expected_profit - best.results!.expected_profit;
-  return { text: `${fmtMoney(gap)} vs best (${best.display_id})`, tone: "bad", icon: "i-lucide-arrow-down-right" };
+  return { text: `${fmtMoney(Math.abs(gap))} ${gap < 0 ? "worse" : "better"} than best (${best.display_id})`, tone: "neutral", icon: "i-lucide-arrow-down-right" };
 });
 
 const scenarioRange = computed(() => {
@@ -125,10 +126,13 @@ const scenarioRange = computed(() => {
 const heroKpi = computed(() => {
   const r = run.value;
   if (!r?.results) return null;
+  const p = r.results.expected_profit;
+  const label = `${isStochastic.value ? "Expected " : ""}${isCost.value ? "net cost" : "profit"}`;
   return {
-    label: isStochastic.value ? "Expected profit" : "Profit",
-    value: fmtMoney(r.results.expected_profit),
-    tone: profitTone(r.results.expected_profit),
+    label: label.charAt(0).toUpperCase() + label.slice(1),
+    value: fmtMoney(Math.abs(p)),
+    tone: profitTone(p),
+    hint: isCost.value ? "Costs of generation and market purchases minus market sales. Lower is better." : undefined,
     sub: isStochastic.value ? `Probability-weighted over ${r.results.scenarios.length} scenarios` : "Single deterministic scenario",
   };
 });
@@ -138,30 +142,41 @@ const secondaryKpis = computed(() => {
   if (!r?.results) return [];
   if (isStochastic.value) {
     const cl = r.objective.cvar?.confidence_level ?? 0.95;
+    const tail = r.results.cvar;
     return [
       {
-        label: `CVaR ${fmtPct(cl)}`,
-        value: r.results.cvar !== null ? fmtMoney(r.results.cvar) : "—",
-        tone: profitTone(r.results.cvar),
-        hint: `Mean profit of the worst ${fmtPct(1 - cl)} of outcomes. Higher means less downside risk.`,
-        sub: "Tail profit",
+        label: tail !== null && tail < 0 ? "Worst-case cost" : "Worst-case profit",
+        value: tail !== null ? fmtMoney(Math.abs(tail)) : "—",
+        tone: "default" as const,
+        hint: `Average result over the worst ${fmtPct(1 - cl)} of scenarios (CVaR). Shows downside risk.`,
+        sub: `Average of the worst ${fmtPct(1 - cl)} of outcomes (CVaR ${fmtPct(cl)})`,
         icon: "i-lucide-shield-alert",
       },
       {
-        label: "Objective value",
+        label: "Optimised score",
         value: fmtMoney(r.objective_value),
-        hint: `What the solver maximised: E[profit]${r.objective.cvar ? ` + ${r.objective.cvar.weight} × CVaR` : ""}.`,
-        sub: r.objective.cvar ? `E[profit] + ${r.objective.cvar.weight} × CVaR` : "E[profit]",
+        hint: `Objective value: what the solver maximised, E[profit]${r.objective.cvar ? ` + ${r.objective.cvar.weight} × CVaR` : ""}.`,
+        sub: r.objective.cvar ? `Profit blended with risk (weight ${r.objective.cvar.weight})` : "Expected profit",
         icon: "i-lucide-target",
       },
-      { label: "Generator startups", value: String(startupCount.value), sub: "First scenario", icon: "i-lucide-power" },
+      { label: "Generator starts", value: String(startupCount.value), sub: "Expected across scenarios", icon: "i-lucide-power" },
     ];
   }
-  return [
-    { label: "Objective value", value: fmtMoney(r.objective_value), hint: "What the solver maximised.", sub: "Solver objective", icon: "i-lucide-target" },
-    { label: "Generator startups", value: String(startupCount.value), sub: "Across the horizon", icon: "i-lucide-power" },
-  ];
+  const out = [{ label: "Generator starts", value: String(startupCount.value), sub: "Across the horizon", icon: "i-lucide-power" }] as { label: string; value: string; sub?: string; hint?: string; icon?: string }[];
+  // The solver objective only adds information when it differs from the profit shown above.
+  if (r.objective_value != null && Math.abs(r.objective_value - r.results.expected_profit) > 0.5) {
+    out.unshift({ label: "Optimised score", value: fmtMoney(r.objective_value), hint: "Objective value: what the solver maximised.", sub: "Solver objective", icon: "i-lucide-target" });
+  }
+  if (verdict.value?.importShare != null) {
+    out.push({ label: "Market purchases", value: fmtPct(verdict.value.importShare), sub: "Share of energy supplied", icon: "i-lucide-arrow-down-to-line" });
+  }
+  return out;
 });
+
+const printKpis = computed(() => [
+  ...(heroKpi.value ? [{ label: heroKpi.value.label, value: heroKpi.value.value, sub: heroKpi.value.sub }] : []),
+  ...secondaryKpis.value.map((k) => ({ label: k.label, value: k.value, sub: k.sub })),
+]);
 
 const scenarioChips = computed(() => run.value?.results?.scenarios ?? []);
 
@@ -186,17 +201,61 @@ async function runSweep() {
   }
 }
 
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    toast.add({ title: "Link copied", icon: "i-lucide-link", color: "success" });
+  } catch {
+    toast.add({ title: "Could not copy the link", color: "error" });
+  }
+}
+function downloadDispatch() {
+  if (!run.value?.results) return;
+  downloadText(`${run.value.display_id}-dispatch.csv`, dispatchCsv(run.value.results, stepHours.value));
+}
+function printSummary() {
+  window.print();
+}
+const exportItems = computed(() => [
+  [
+    { label: "Download dispatch CSV", icon: "i-lucide-file-spreadsheet", disabled: !run.value || !hasResults(run.value.status), onSelect: downloadDispatch },
+    { label: "Download summary", icon: "i-lucide-printer", disabled: !run.value || !hasResults(run.value.status), onSelect: printSummary },
+  ],
+  [{ label: "Copy link", icon: "i-lucide-link", onSelect: copyLink }],
+]);
+const headerMenu = computed(() => [
+  [
+    { label: "Re-run", icon: "i-lucide-rotate-cw", to: `/p/${projectId.value}/runs/new?from=${runId.value}` },
+    { label: "Compare with…", icon: "i-lucide-git-compare", disabled: !run.value || !hasResults(run.value.status), to: `/p/${projectId.value}/compare?a=${runId.value}` },
+  ],
+  ...exportItems.value,
+]);
+
+// Plain-language explanations for runs that produced no schedule.
+const failure = computed(() => {
+  const r = run.value;
+  if (!r) return null;
+  const term = (r.termination_condition ?? "").toLowerCase();
+  if (r.status === "infeasible" || term.includes("infeasible"))
+    return { title: "No feasible schedule", text: "The solver proved that no schedule can satisfy every constraint at once. This usually means demand cannot be met with the available capacity, or storage limits conflict." };
+  if (term.includes("time")) return { title: "Ran out of time", text: "The solver hit its time limit before finding a schedule." };
+  return { title: "The solver could not finish", text: "The solver stopped before producing a schedule. Check the message below, adjust the inputs, and try again." };
+});
+
 const frontierRuns = computed(() => (sweepRuns.value.length ? sweepRuns.value : run.value ? [run.value] : []));
 </script>
 
 <template>
   <UDashboardPanel>
     <template #header>
-      <PageHeader :crumbs="[{ label: 'Runs', to: `/p/${projectId}/runs` }, { label: run?.display_id ?? `Run ${runId}` }]">
+      <PageHeader :crumbs="[{ label: 'Runs', to: `/p/${projectId}/runs` }, { label: run?.display_id ?? `Run ${runId}` }]" :menu="run ? headerMenu : undefined">
         <template v-if="run" #meta><StatusBadge :status="run.status" /></template>
         <template v-if="run" #actions>
           <UButton color="neutral" variant="outline" icon="i-lucide-rotate-cw" label="Re-run" :to="`/p/${projectId}/runs/new?from=${run.id}`" />
           <UButton color="neutral" variant="outline" icon="i-lucide-git-compare" label="Compare with…" :disabled="!hasResults(run.status)" :to="`/p/${projectId}/compare?a=${run.id}`" />
+          <UDropdownMenu :items="exportItems" :content="{ align: 'end' }">
+            <UButton color="neutral" variant="outline" icon="i-lucide-download" trailing-icon="i-lucide-chevron-down" label="Export" />
+          </UDropdownMenu>
         </template>
       </PageHeader>
     </template>
@@ -205,32 +264,63 @@ const frontierRuns = computed(() => (sweepRuns.value.length ? sweepRuns.value : 
       <PageSkeleton v-if="loading" />
       <ErrorState v-else-if="loadError" :message="loadError" @retry="load" />
 
-      <Panel v-else-if="run && !hasResults(run.status)" :title="run.status === 'infeasible' ? 'Infeasible run' : 'Run failed'" description="The solver did not return a schedule.">
-        <dl class="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs">
-          <dt class="text-muted">solver_status</dt><dd>{{ run.solver_status ?? "—" }}</dd>
-          <dt class="text-muted">termination_condition</dt><dd>{{ run.termination_condition ?? "—" }}</dd>
-          <dt class="text-muted">objective_value</dt><dd>{{ run.objective_value ?? "None" }}</dd>
-        </dl>
+      <Panel v-else-if="run && !hasResults(run.status)" :title="failure?.title" description="The solver did not return a schedule.">
+        <p class="mb-3 text-sm text-default">{{ failure?.text }}</p>
         <UAlert v-if="run.error_message" color="error" variant="subtle" :description="run.error_message" class="mb-3" />
-        <p v-if="run.status === 'infeasible'" class="mb-3 text-sm text-muted">
-          Infeasible usually means demand cannot be met with the available capacity, or storage SoC bounds conflict. Review the portfolio and scenario inputs, then re-run.
-        </p>
-        <div class="flex gap-2">
+        <details class="mb-4 text-xs text-muted">
+          <summary class="cursor-pointer select-none font-medium">Technical details</summary>
+          <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono">
+            <dt>solver_status</dt><dd class="text-default">{{ run.solver_status ?? "—" }}</dd>
+            <dt>termination_condition</dt><dd class="text-default">{{ run.termination_condition ?? "—" }}</dd>
+            <dt>objective_value</dt><dd class="text-default">{{ run.objective_value ?? "None" }}</dd>
+          </dl>
+        </details>
+        <div class="flex flex-wrap gap-2">
           <UButton color="neutral" variant="outline" label="Edit portfolio" icon="i-lucide-boxes" :to="`/p/${projectId}/portfolio`" />
           <UButton color="neutral" variant="outline" label="Re-run with changes" icon="i-lucide-rotate-cw" :to="`/p/${projectId}/runs/new?from=${run.id}`" />
         </div>
       </Panel>
 
-      <div v-else-if="run" class="flex flex-col gap-5">
-        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <span class="text-default">{{ portfolioVersion?.name }} v{{ portfolioVersion?.version }}</span>·
-          <span class="text-default">{{ scenarioSet?.name }} v{{ scenarioSet?.version }}</span>·
-          <span>{{ scenarioSet?.number_of_steps }} steps × {{ scenarioSet?.timestep_hours }} h</span>·
-          <span v-if="run.objective.cvar">CVaR weight {{ run.objective.cvar.weight }} @ {{ fmtPct(run.objective.cvar.confidence_level) }}</span>
-          <span v-else>{{ isStochastic ? "Risk-neutral" : "Deterministic" }}</span>·
-          <span>{{ run.solver.solver_name.toUpperCase() }} · {{ fmtDuration(run.solve_time_seconds) }} · {{ run.termination_condition ?? "—" }}</span>·
-          <span>{{ fmtDateTime(run.created_at) }}</span>
-        </p>
+      <div v-else-if="run" class="flex flex-col gap-5 print:hidden">
+        <div class="flex flex-col gap-3">
+          <div v-if="verdict" class="flex flex-col gap-1">
+            <h1 class="text-lg font-semibold text-highlighted sm:text-xl">{{ verdict.sentence }}</h1>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-boxes"
+              :label="`${portfolioVersion?.name ?? 'Portfolio'} v${portfolioVersion?.version ?? ''}`"
+              :to="`/p/${projectId}/portfolio`"
+            />
+            <UPopover>
+              <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-calendar-range" :label="`${scenarioSet?.name ?? 'Scenarios'} v${scenarioSet?.version ?? ''}`" trailing-icon="i-lucide-chevron-down" />
+              <template #content>
+                <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 p-4 text-xs">
+                  <dt class="text-muted">Type</dt><dd>{{ isStochastic ? "Stochastic (several scenarios)" : "Deterministic (one scenario)" }}</dd>
+                  <dt class="text-muted">Scenarios</dt><dd>{{ scenarioSet?.scenarios.length }}</dd>
+                  <dt class="text-muted">Horizon</dt><dd>{{ scenarioSet?.number_of_steps }} steps × {{ scenarioSet?.timestep_hours }} h</dd>
+                </dl>
+              </template>
+            </UPopover>
+            <UPopover>
+              <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-settings-2" label="Solver details" trailing-icon="i-lucide-chevron-down" />
+              <template #content>
+                <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 p-4 text-xs">
+                  <dt class="text-muted">Solver</dt><dd>{{ run.solver.solver_name.toUpperCase() }}</dd>
+                  <dt class="text-muted">Solve time</dt><dd>{{ fmtDuration(run.solve_time_seconds) }}</dd>
+                  <dt class="text-muted">Outcome</dt><dd>{{ run.status === "optimal" ? "Proven optimal" : runStatus(run.status).label }}<span class="text-muted"> ({{ run.termination_condition ?? "—" }})</span></dd>
+                  <dt class="text-muted">Horizon</dt><dd>{{ scenarioSet?.number_of_steps }} steps × {{ scenarioSet?.timestep_hours }} h</dd>
+                  <dt class="text-muted">Risk</dt>
+                  <dd>{{ run.objective.cvar ? `CVaR weight ${run.objective.cvar.weight} @ ${fmtPct(run.objective.cvar.confidence_level)}` : isStochastic ? "Risk-neutral" : "Deterministic" }}</dd>
+                  <dt class="text-muted">Run at</dt><dd>{{ fmtDateTime(run.created_at) }}</dd>
+                </dl>
+              </template>
+            </UPopover>
+          </div>
+        </div>
 
         <div v-if="heroKpi" class="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <KpiCard size="hero" v-bind="heroKpi" :delta="profitDelta">
@@ -288,7 +378,7 @@ const frontierRuns = computed(() => (sweepRuns.value.length ? sweepRuns.value : 
               :step-hours="stepHours"
             />
           </div>
-          <UnitCommitmentGrid v-else-if="activeTab === 'uc'" :scenario="currentScenarioResults" :generators="generators" :asset-colors="assetColors" :step-hours="stepHours" />
+          <UnitCommitmentGrid v-else-if="activeTab === 'uc'" :market-prices="currentScenarioDef?.market_prices ?? {}" :scenario="currentScenarioResults" :generators="generators" :asset-colors="assetColors" :step-hours="stepHours" />
           <StorageChart v-else-if="activeTab === 'storage'" :scenario="currentScenarioResults" :storages="storages" :step-hours="stepHours" />
           <MarketChart v-else-if="activeTab === 'market'" :scenario="currentScenarioResults" :markets="markets" :market-prices="currentScenarioDef?.market_prices ?? {}" :step-hours="stepHours" />
           <ProfitBreakdown v-else-if="activeTab === 'profit'" :scenario="currentScenarioResults" />
@@ -296,6 +386,15 @@ const frontierRuns = computed(() => (sweepRuns.value.length ? sweepRuns.value : 
           <RiskFrontierChart v-else-if="activeTab === 'frontier'" :runs="frontierRuns" :current-run="run" :sweeping="sweeping" @sweep="runSweep" />
         </ClientOnly>
       </div>
+      <RunSummary
+        v-if="run && verdict && hasResults(run.status)"
+        :run="run"
+        :verdict="verdict"
+        :portfolio-label="`${portfolioVersion?.name} v${portfolioVersion?.version}`"
+        :scenario-label="`${scenarioSet?.name} v${scenarioSet?.version}`"
+        :kpis="printKpis"
+        :scenario-name="selectedScenario"
+      />
     </template>
   </UDashboardPanel>
 </template>
